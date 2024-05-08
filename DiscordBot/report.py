@@ -97,18 +97,19 @@ class Report:
         self.user_is_minor = None
 
     async def handle_message(self, message):
+
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
             return ["Report cancelled."]
 
         if message.content == self.HELP_KEYWORD:
             return [
-                "To report a message:",
-                "1. Use the `report` command",
-                "2. Provide the message link when prompted",
-                "3. Select a report reason from the menu",
-                "4. Provide specifics and confirm the report",
-                "\nYou can cancel at any time by saying `cancel`.",
+                "To report a message:\n"
+                "1. Use the `report` command\n"
+                "2. Provide the message link when prompted\n"
+                "3. Select a report reason from the menu\n"
+                "4. Provide specifics and confirm the report\n\n"
+                "You can cancel at any time by saying `cancel`."
             ]
 
         if self.state == State.REPORT_START:
