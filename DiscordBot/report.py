@@ -198,14 +198,10 @@ class Report:
             if message.content.lower() == "confirm":
                 self.state = State.AWAITING_BLOCK_DECISION
                 responses = [
-                    "We prohibit any form of non-consensual sharing or threat to share sexual content. We \
-                        will review the report and remove any content that violates our Community Standards.",
-                    "Your report has been submitted. Thank you for helping keep our community safe.\n",
+                    "Your report has been submitted. We will review the report and remove any content that "
+                    "violates our Community Standards. Thank you for keeping our community safe.",
                     "Would you like to block this user to prevent them from messaging you again? Reply `yes` or `no`.",
                 ]
-
-                if not self.user_is_minor:
-                    responses.pop(0)
 
                 return responses
             elif message.content.lower() == "cancel":
