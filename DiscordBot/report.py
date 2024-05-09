@@ -95,6 +95,7 @@ class Report:
         self.report_reason = None
         self.reason_subtype = None
         self.user_is_minor = None
+        self.message_history = None
 
     async def handle_message(self, message):
 
@@ -142,6 +143,13 @@ class Report:
                 return [
                     "It seems this message was deleted or never existed. Please try again or say `cancel` to cancel."
                 ]
+
+            self.message_history = [
+                m
+                async for m in self.message.channel.history(
+                    around=self.message, limit=15
+                )
+            ]
 
             self.state = State.AWAITING_REPORT_REASON
 
