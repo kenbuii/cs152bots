@@ -249,11 +249,11 @@ class Report:
         Handles a message from a moderator reviewing a report.
         """
         if self.state == State.REPORT_COMPLETE:
-            reply = "Thank you for starting the reporting process.\n"
-            reply += "Here are the details of your report:\n"
+            reply = "Thank you for starting the review process.\n"
+            reply += "Here are the details of the report:\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "> Message: " + self.message.jump_url + "\n"
-            reply += "> Message Author: " + self.message.author.name + "\n"
+            reply += f"> Message Author: <@{message.author.name}> \n"
             reply += "> Message Contents: " + self.message.content + "\n"
             reply += "> Reason: " + self.report_reason.name.value + "\n"
 
@@ -302,14 +302,14 @@ class Report:
             if message.content.lower() in ["yes", "y"]:
                 reply = "Thank you for reviewing the report. The reported content does involve a minor.  This review is now marked as completed.\n"
                 reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
-                reply += "Please file a report with your local law enforcement agency. "
-                reply += f"Please ban <@{message.author.id}>."
+                reply += "Please file a report with your local law enforcement agency.\n"
+                reply += f"<@{message.author.id}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "Thank you for your cooperation. The reported content does not involve a minor. This review is now marked as completed.\n"
-                reply += "Please file a report with your local law enforcement agency. "
-                reply += f"Please ban <@{message.author.name}>."
+                reply += "Please file a report with your local law enforcement agency.\n"
+                reply += f"<@{message.author.name}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             else:
