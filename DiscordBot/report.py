@@ -13,6 +13,13 @@ class State(Enum):
     AWAITING_REPORT_CONFIRMATION = auto()
     AWAITING_BLOCK_DECISION = auto()
     REPORT_COMPLETE = auto()
+    PENDING_REVIEW = auto()
+    PENDING_NONCONSENSUAL_REVIEW = auto()
+    PENDING_NUDITY_REVIEW = auto()
+    PENDING_GUIDELINES_REVIEW = auto()
+    PENDING_MINOR_REVIEW = auto()
+    PENDING_ADVERSARY_REVIEW = auto()
+    REVIEW_COMPLETE = auto()
 
 
 class ReportReason(Enum):
@@ -49,6 +56,7 @@ class ReportReasonInfo:
 class Report:
     START_KEYWORD = "report"
     CANCEL_KEYWORD = "cancel"
+    REVIEW_KEYWORD = "review"
     HELP_KEYWORD = "help"
 
     REPORT_REASON_INFOS = [
@@ -88,7 +96,7 @@ class Report:
         ReportReasonInfo(name=ReportReason.SPAM),
     ]
 
-    def __init__(self, client):
+    def __init__(self, client, author_id):
         self.state = State.REPORT_START
         self.client = client
         self.message = None
@@ -96,6 +104,8 @@ class Report:
         self.reason_subtype = None
         self.user_is_minor = None
         self.message_history = None
+        self.author_id = author_id
+        self.guild = None
 
     async def handle_message(self, message):
 
@@ -128,6 +138,7 @@ class Report:
                     "I'm sorry, I couldn't read that link. Please try again or say `cancel` to cancel."
                 ]
             guild = self.client.get_guild(int(m.group(1)))
+            self.guild = guild
             if not guild:
                 return [
                     "I cannot accept reports of messages from guilds that I'm not in. Please have the guild owner add me to the guild and try again."
@@ -231,6 +242,108 @@ class Report:
                 ]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
+        
+    async def handle_review(self, message):
+        """
+        Handles a message from a moderator reviewing a report.
+        """
+        if self.state == State.PENDING_REVIEW:
+            reply = "Thank you for starting the reporting process.\n"
+            reply += "Here are the details of your report:\n"
+            reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
+            reply += "> Message: " + self.message.jump_url + "\n"
+            reply += "> Reason: " + self.report_reason.name.value + "\n"
+
+            if self.reason_subtype:
+                reply += "> Specifics: " + self.reason_subtype.name.value + "\n"
+
+            if self.user_is_minor is not None:
+                reply += (
+                    "> Are you a minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
+                )
+            if self.message_history is not None:
+                reply += "> Message History:\n"
+                for msg in self.message_history:
+                    reply += f"> {msg.author.name}: {msg.content}\n"
+            reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
+            reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
+            reply += "Reply `yes` or `no`."
+            self.state = State.PENDING_NONCONSENSUAL_REVIEW
+            return [reply]
+        if self.state == State.PENDING_NONCONSENSUAL_REVIEW:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "I understand. Does the reported content contain nudity?\n"
+                reply += "Reply `yes` or `no`."
+                self.state = State.PENDING_NUDITY_REVIEW
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "I understand. Does the reported content violate platform guidelines?\n"
+                reply += "Reply `yes` or `no`."
+                self.state = State.PENDING_GUIDELINES_REVIEW
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
+        if self.state == State.PENDING_NUDITY_REVIEW:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "Thank you for reviewing the report. The reported content contains nudity and will be removed.\n"
+                await self.message.delete()
+                reply += "Is the reporting user a minor?\n"
+                reply += "Reply `yes` or `no`."
+                self.state = State.PENDING_MINOR_REVIEW
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "Thank you for reviewing the report. The reported content contains nudity and will be removed.\n"
+                await self.message.delete()
+                reply += "Is the reporting user a minor?\n"
+                reply += "Reply `yes` or `no`."
+                self.state = State.PENDING_MINOR_REVIEW
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
+        if self.state == State.PENDING_MINOR_REVIEW:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "Thank you for reviewing the report. The reported content does involve a minor.  This review is now marked as completed.\n"
+                reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
+                reply += "Please file a report with your local law enforcement agency."
+                if self.guild:
+                    await self.guild.kick(self.message.author, reason="Reported content")
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "Thank you for your cooperation. The reported content does not involve a minor. This review is now marked as completed.\n"
+                reply += "Please file a report with your local law enforcement agency."
+                if self.guild:
+                    await self.guild.kick(self.message.author, reason="Reported content")
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
+        if self.state == State.PENDING_GUIDELINES_REVIEW:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "Thank you for reviewing the report. The reported content violates platform guidelines. Please report to discord. This review is now marked as completed.\n"
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "Does this look like adversarial reporting?\n"
+                reply += "Reply `yes` or `no`."
+                self.state = State.PENDING_ADVERSARY_REVIEW
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
+        if self.state == State.PENDING_ADVERSARY_REVIEW:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "Thank you for reviewing the report. The user will be temporarily banned from reporting. This review is now marked as completed.\n"
+                self.client.report_ban.append(self.author_id)
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "This review is now marked as completed.\n"
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
+
+        
 
     def ask_for_confirmation(self):
         """
@@ -257,6 +370,12 @@ class Report:
 
         reply += "\nIf this is correct, reply `confirm`. If not, reply `cancel`."
         return ["Thank you.", reply]
+
+    def review_complete(self):
+        """
+        Checks if the review flow is complete.
+        """
+        return self.state == State.REVIEW_COMPLETE
 
     def report_complete(self):
         """

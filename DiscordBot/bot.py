@@ -39,6 +39,9 @@ class ModBot(discord.Client):
         self.mod_channels = {}  # Map from guild to the mod channel id for that guild
 
         self.reports = {}  # Map from user IDs to the state of their report
+        self.pending_review = [] # List of reports that are pending review
+        self.reviewed = [] # List of reports that have been reviewed
+        self.report_ban = [] # List of users who cannot report
 
     async def on_ready(self):
         print(f"{self.user.name} has connected to Discord! It is these guilds:")
@@ -90,6 +93,10 @@ class ModBot(discord.Client):
 
         responses = []
 
+        if author_id in self.report_ban:
+            await message.channel.send("You have been banned from reporting.")
+            return
+
         # Only respond to messages if they're part of a reporting flow
         if author_id not in self.reports and not message.content.startswith(
             Report.START_KEYWORD
@@ -98,7 +105,7 @@ class ModBot(discord.Client):
 
         # If we don't currently have an active report for this user, add one
         if author_id not in self.reports:
-            self.reports[author_id] = Report(self)
+            self.reports[author_id] = Report(self, author_id)
 
         # Let the report class handle this message; forward all the messages it returns to uss
         responses = await self.reports[author_id].handle_message(message)
@@ -107,7 +114,7 @@ class ModBot(discord.Client):
 
         # If the report is complete or cancelled, remove it from our map
         if self.reports[author_id].report_complete():
-            self.reports.pop(author_id)
+            self.pending_review.append(self.reports.pop(author_id))
 
     async def handle_channel_message(self, message):
         user_channel = self.user_channels[message.guild.id]
@@ -131,10 +138,22 @@ class ModBot(discord.Client):
 
     async def handle_mod_channel_message(self, message):
         mod_channel = self.mod_channels[message.guild.id]
+        if message.content == Report.HELP_KEYWORD:
+            reply = "Use the `review` command to begin the review process.\n"
+            await message.channel.send(reply)
+            return
+        
+        if message.content.startswith(
+            Report.REVIEW_KEYWORD
+        ):
+            if len(self.pending_review) == 0:
+                await message.channel.send("No reports to review.")
+                return
+        await self.pending_review[0].handle_review(message)
 
-        await mod_channel.send(
-            f'Hello {message.author.name}! I heard you say "{message.content}" in the mod channel.'
-        )
+        if self.pending_review[0].review_complete():
+            self.reviewed.append(self.pending_review.pop(0))
+
 
     def eval_text(self, message):
         """'
