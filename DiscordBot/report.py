@@ -111,6 +111,7 @@ class Report:
 
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
+            self.client.reports.pop(self.author_id)
             return ["Report cancelled."]
 
         if message.content == self.HELP_KEYWORD:
@@ -247,11 +248,13 @@ class Report:
         """
         Handles a message from a moderator reviewing a report.
         """
-        if self.state == State.PENDING_REVIEW:
+        if self.state == State.REPORT_COMPLETE:
             reply = "Thank you for starting the reporting process.\n"
             reply += "Here are the details of your report:\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "> Message: " + self.message.jump_url + "\n"
+            reply += "> Message Author: " + self.message.author.name + "\n"
+            reply += "> Message Contents: " + self.message.content + "\n"
             reply += "> Reason: " + self.report_reason.name.value + "\n"
 
             if self.reason_subtype:
@@ -259,12 +262,8 @@ class Report:
 
             if self.user_is_minor is not None:
                 reply += (
-                    "> Are you a minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
+                    "> Minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
                 )
-            if self.message_history is not None:
-                reply += "> Message History:\n"
-                for msg in self.message_history:
-                    reply += f"> {msg.author.name}: {msg.content}\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
             reply += "Reply `yes` or `no`."
@@ -285,15 +284,14 @@ class Report:
                 return ["Invalid input. Please reply `yes` or `no`."]
         if self.state == State.PENDING_NUDITY_REVIEW:
             if message.content.lower() in ["yes", "y"]:
-                reply = "Thank you for reviewing the report. The reported content contains nudity and will be removed.\n"
+                reply = "Thank you for reviewing the report. The reported content contains nudity and has beem removed.\n"
                 await self.message.delete()
                 reply += "Is the reporting user a minor?\n"
                 reply += "Reply `yes` or `no`."
                 self.state = State.PENDING_MINOR_REVIEW
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
-                reply = "Thank you for reviewing the report. The reported content contains nudity and will be removed.\n"
-                await self.message.delete()
+                reply = "Thank you for reviewing the report. The reported content does not contain nudity.\n"
                 reply += "Is the reporting user a minor?\n"
                 reply += "Reply `yes` or `no`."
                 self.state = State.PENDING_MINOR_REVIEW
@@ -304,16 +302,14 @@ class Report:
             if message.content.lower() in ["yes", "y"]:
                 reply = "Thank you for reviewing the report. The reported content does involve a minor.  This review is now marked as completed.\n"
                 reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
-                reply += "Please file a report with your local law enforcement agency."
-                if self.guild:
-                    await self.guild.kick(self.message.author, reason="Reported content")
+                reply += "Please file a report with your local law enforcement agency. "
+                reply += f"Please ban <@{message.author.id}>."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "Thank you for your cooperation. The reported content does not involve a minor. This review is now marked as completed.\n"
-                reply += "Please file a report with your local law enforcement agency."
-                if self.guild:
-                    await self.guild.kick(self.message.author, reason="Reported content")
+                reply += "Please file a report with your local law enforcement agency. "
+                reply += f"Please ban <@{message.author.name}>."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             else:

@@ -113,7 +113,7 @@ class ModBot(discord.Client):
             await message.channel.send(r)
 
         # If the report is complete or cancelled, remove it from our map
-        if self.reports[author_id].report_complete():
+        if author_id in self.reports and self.reports[author_id].report_complete():
             self.pending_review.append(self.reports.pop(author_id))
 
     async def handle_channel_message(self, message):
@@ -149,7 +149,9 @@ class ModBot(discord.Client):
             if len(self.pending_review) == 0:
                 await message.channel.send("No reports to review.")
                 return
-        await self.pending_review[0].handle_review(message)
+        responses = await self.pending_review[0].handle_review(message)
+        for r in responses:
+            await message.channel.send(r)
 
         if self.pending_review[0].review_complete():
             self.reviewed.append(self.pending_review.pop(0))
