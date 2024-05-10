@@ -243,7 +243,7 @@ class Report:
                 ]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
-        
+
     async def handle_review(self, message):
         """
         Handles a message from a moderator reviewing a report.
@@ -253,7 +253,7 @@ class Report:
             reply += "Here are the details of the report:\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "> Message: " + self.message.jump_url + "\n"
-            reply += f"> Message Author: <@{message.author.name}> \n"
+            reply += f"> Message Author: <@{self.message.author.name}> \n"
             reply += "> Message Contents: " + self.message.content + "\n"
             reply += "> Reason: " + self.report_reason.name.value + "\n"
 
@@ -261,9 +261,7 @@ class Report:
                 reply += "> Specifics: " + self.reason_subtype.name.value + "\n"
 
             if self.user_is_minor is not None:
-                reply += (
-                    "> Minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
-                )
+                reply += "> Minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
             reply += "Reply `yes` or `no`."
@@ -302,13 +300,17 @@ class Report:
             if message.content.lower() in ["yes", "y"]:
                 reply = "Thank you for reviewing the report. The reported content does involve a minor.  This review is now marked as completed.\n"
                 reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
-                reply += "Please file a report with your local law enforcement agency.\n"
+                reply += (
+                    "Please file a report with your local law enforcement agency.\n"
+                )
                 reply += f"<@{message.author.id}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "Thank you for your cooperation. The reported content does not involve a minor. This review is now marked as completed.\n"
-                reply += "Please file a report with your local law enforcement agency.\n"
+                reply += (
+                    "Please file a report with your local law enforcement agency.\n"
+                )
                 reply += f"<@{message.author.name}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
@@ -338,8 +340,6 @@ class Report:
                 return [reply]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
-
-        
 
     def ask_for_confirmation(self):
         """
