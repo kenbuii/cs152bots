@@ -266,7 +266,7 @@ class Report:
             reply += "Here are the details of the report:\n"
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "> Message: " + self.message.jump_url + "\n"
-            reply += f"> Message Author: <@{self.message.author.name}> \n"
+            reply += f"> Message Author: <@{self.message.author.id}> \n"
             reply += "> Message Contents: " + self.message.content + "\n"
             reply += "> Reason: " + self.report_reason.name.value + "\n"
 
@@ -321,7 +321,7 @@ class Report:
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
-                reply += f"<@{self.message.author.name}> has been banned."
+                reply += f"<@{self.message.author.id}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
@@ -329,7 +329,7 @@ class Report:
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
-                reply += f"<@{self.message.author.name}> has been banned."
+                reply += f"<@{self.message.author.id}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             else:
