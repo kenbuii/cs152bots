@@ -58,6 +58,7 @@ class Report:
     CANCEL_KEYWORD = "cancel"
     REVIEW_KEYWORD = "review"
     HELP_KEYWORD = "help"
+    BACK_KEYWORD = "back"
 
     REPORT_REASON_INFOS = [
         ReportReasonInfo(
@@ -106,9 +107,12 @@ class Report:
         self.message_history = None
         self.author_id = author_id
         self.guild = None
+        self.previous_state = None
+        self.previous_reason = None
+        self.previous_subtype = None
+        self.previous_minor_indication = None
 
     async def handle_message(self, message):
-
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
             self.client.reports.pop(self.author_id)
@@ -121,14 +125,19 @@ class Report:
                 "2. Provide the message link when prompted\n"
                 "3. Select a report reason from the menu\n"
                 "4. Provide specifics and confirm the report\n\n"
-                "You can cancel at any time by saying `cancel`."
+                "You can cancel at any time by saying `cancel`.\n"
+                "You can go back to the previous step by saying `back`."
             ]
 
+        if message.content == self.BACK_KEYWORD:
+            return await self.handle_back()
+
         if self.state == State.REPORT_START:
-            reply = "Thank you for starting the reporting process. "
-            reply += "Say `help` at any time for more information.\n\n"
+            reply = "Thank you for starting the reporting process.\n"
+            reply += "You can go back to the previous step by saying `back`. Say `help` at any time for more information.\n\n"
             reply += "Please copy paste the link to the message you want to report.\n"
             reply += "You can obtain this link by right-clicking the message and clicking `Copy Message Link`."
+            self.update_previous_state()
             self.state = State.AWAITING_MESSAGE_LINK
             return [reply]
 
@@ -163,6 +172,7 @@ class Report:
                 )
             ]
 
+            self.update_previous_state()
             self.state = State.AWAITING_REPORT_REASON
 
             reply = "I found this message:"
@@ -187,6 +197,7 @@ class Report:
             if not self.report_reason.subtypes:
                 return self.ask_for_confirmation()
 
+            self.update_previous_state()
             self.state = State.AWAITING_REASON_SPECIFICS
 
             reply = f"**{self.report_reason.question_text}**\n"
@@ -207,6 +218,7 @@ class Report:
             if not self.reason_subtype.ask_if_user_is_minor:
                 return self.ask_for_confirmation()
 
+            self.update_previous_state()
             self.state = State.AWAITING_MINOR_INDICATION
             return ["Are you a minor? Reply `yes` or `no`."]
 
@@ -216,6 +228,7 @@ class Report:
 
         if self.state == State.AWAITING_REPORT_CONFIRMATION:
             if message.content.lower() == "confirm":
+                self.update_previous_state()
                 self.state = State.AWAITING_BLOCK_DECISION
                 responses = [
                     "Your report has been submitted. We will review the report and remove any content that "
@@ -245,9 +258,9 @@ class Report:
                 return ["Invalid input. Please reply `yes` or `no`."]
 
     async def handle_review(self, message):
-        """
-        Handles a message from a moderator reviewing a report.
-        """
+        if message.content == self.BACK_KEYWORD:
+            return await self.handle_review_back()
+
         if self.state == State.REPORT_COMPLETE:
             reply = "Thank you for starting the review process.\n"
             reply += "Here are the details of the report:\n"
@@ -265,40 +278,45 @@ class Report:
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
             reply += "Reply `yes` or `no`."
+            self.update_previous_state()
             self.state = State.PENDING_NONCONSENSUAL_REVIEW
             return [reply]
         if self.state == State.PENDING_NONCONSENSUAL_REVIEW:
             if message.content.lower() in ["yes", "y"]:
                 reply = "I understand. Does the reported content contain nudity?\n"
                 reply += "Reply `yes` or `no`."
+                self.update_previous_state()
                 self.state = State.PENDING_NUDITY_REVIEW
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "I understand. Does the reported content violate platform guidelines?\n"
                 reply += "Reply `yes` or `no`."
+                self.update_previous_state()
                 self.state = State.PENDING_GUIDELINES_REVIEW
                 return [reply]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
         if self.state == State.PENDING_NUDITY_REVIEW:
             if message.content.lower() in ["yes", "y"]:
-                reply = "Thank you for reviewing the report. The reported content contains nudity and has beem removed.\n"
+                reply = "Thank you for reviewing the report. The reported content contains nudity and has been removed.\n"
                 await self.message.delete()
                 reply += "Is the reporting user a minor?\n"
                 reply += "Reply `yes` or `no`."
+                self.update_previous_state()
                 self.state = State.PENDING_MINOR_REVIEW
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "Thank you for reviewing the report. The reported content does not contain nudity.\n"
                 reply += "Is the reporting user a minor?\n"
                 reply += "Reply `yes` or `no`."
+                self.update_previous_state()
                 self.state = State.PENDING_MINOR_REVIEW
                 return [reply]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
         if self.state == State.PENDING_MINOR_REVIEW:
             if message.content.lower() in ["yes", "y"]:
-                reply = "Thank you for reviewing the report. The reported content does involve a minor.  This review is now marked as completed.\n"
+                reply = "Thank you for reviewing the report. The reported content does involve a minor. This review is now marked as completed.\n"
                 reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
@@ -318,12 +336,13 @@ class Report:
                 return ["Invalid input. Please reply `yes` or `no`."]
         if self.state == State.PENDING_GUIDELINES_REVIEW:
             if message.content.lower() in ["yes", "y"]:
-                reply = "Thank you for reviewing the report. The reported content violates platform guidelines. Please report to discord. This review is now marked as completed.\n"
+                reply = "Thank you for reviewing the report. The reported content violates platform guidelines. Please report to Discord. This review is now marked as completed.\n"
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
                 reply = "Does this look like adversarial reporting?\n"
                 reply += "Reply `yes` or `no`."
+                self.update_previous_state()
                 self.state = State.PENDING_ADVERSARY_REVIEW
                 return [reply]
             else:
@@ -341,11 +360,65 @@ class Report:
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
 
+    async def handle_back(self):
+        if self.previous_state is None:
+            return ["There is no previous step to go back to."]
+
+        self.state = self.previous_state
+        self.report_reason = self.previous_reason
+        self.reason_subtype = self.previous_subtype
+        self.user_is_minor = self.previous_minor_indication
+
+        if self.state == State.AWAITING_MESSAGE_LINK:
+            self.previous_state = None
+            return ["Please provide the message link again."]
+        elif self.state == State.AWAITING_REPORT_REASON:
+            self.previous_state = State.AWAITING_MESSAGE_LINK
+            return ["Please select the report reason again."]
+        elif self.state == State.AWAITING_REASON_SPECIFICS:
+            self.previous_state = State.AWAITING_REPORT_REASON
+            return ["Please select the specific reason again."]
+        elif self.state == State.AWAITING_MINOR_INDICATION:
+            self.previous_state = State.AWAITING_REASON_SPECIFICS
+            return ["Please indicate if you are a minor again."]
+        elif self.state == State.AWAITING_REPORT_CONFIRMATION:
+            if self.reason_subtype and self.reason_subtype.ask_if_user_is_minor:
+                self.previous_state = State.AWAITING_MINOR_INDICATION
+            else:
+                self.previous_state = State.AWAITING_REASON_SPECIFICS
+            return ["Please confirm your report again."]
+
+    async def handle_review_back(self):
+        if self.state == State.PENDING_NONCONSENSUAL_REVIEW:
+            self.state = State.REPORT_COMPLETE
+            return ["Please review the report details again."]
+        elif self.state == State.PENDING_NUDITY_REVIEW:
+            self.state = State.PENDING_NONCONSENSUAL_REVIEW
+            return [
+                "Please indicate if there is a threat of nonconsensual sharing again."
+            ]
+        elif self.state == State.PENDING_MINOR_REVIEW:
+            self.state = State.PENDING_NUDITY_REVIEW
+            return ["Please indicate if the reported content contains nudity again."]
+        elif self.state == State.PENDING_GUIDELINES_REVIEW:
+            self.state = State.PENDING_NONCONSENSUAL_REVIEW
+            return [
+                "Please indicate if there is a threat of nonconsensual sharing again."
+            ]
+        elif self.state == State.PENDING_ADVERSARY_REVIEW:
+            self.state = State.PENDING_GUIDELINES_REVIEW
+            return [
+                "Please indicate if the reported content violates platform guidelines again."
+            ]
+        else:
+            return ["There is no previous step to go back to."]
+
     def ask_for_confirmation(self):
         """
         Assembles the report confirmation message and asks the user to confirm.
         Transitions to the AWAITING_REPORT_CONFIRMATION state.
         """
+        self.update_previous_state()
         self.state = State.AWAITING_REPORT_CONFIRMATION
 
         reply = "Your report is ready to be submitted.\n"
@@ -366,6 +439,12 @@ class Report:
 
         reply += "\nIf this is correct, reply `confirm`. If not, reply `cancel`."
         return ["Thank you.", reply]
+
+    def update_previous_state(self):
+        self.previous_state = self.state
+        self.previous_reason = self.report_reason
+        self.previous_subtype = self.reason_subtype
+        self.previous_minor_indication = self.user_is_minor
 
     def review_complete(self):
         """
