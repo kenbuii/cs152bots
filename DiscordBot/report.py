@@ -303,7 +303,7 @@ class Report:
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
-                reply += f"<@{message.author.id}> has been banned."
+                reply += f"<@{self.message.author.name}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
@@ -311,7 +311,7 @@ class Report:
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
-                reply += f"<@{message.author.name}> has been banned."
+                reply += f"<@{self.message.author.name}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             else:
