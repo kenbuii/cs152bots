@@ -39,9 +39,9 @@ class ModBot(discord.Client):
         self.mod_channels = {}  # Map from guild to the mod channel id for that guild
 
         self.reports = {}  # Map from user IDs to the state of their report
-        self.pending_review = [] # List of reports that are pending review
-        self.reviewed = [] # List of reports that have been reviewed
-        self.report_ban = [] # List of users who cannot report
+        self.pending_review = []  # List of reports that are pending review
+        self.reviewed = []  # List of reports that have been reviewed
+        self.report_ban = []  # List of users who cannot report
 
     async def on_ready(self):
         print(f"{self.user.name} has connected to Discord! It is these guilds:")
@@ -114,7 +114,19 @@ class ModBot(discord.Client):
 
         # If the report is complete or cancelled, remove it from our map
         if author_id in self.reports and self.reports[author_id].report_complete():
-            self.pending_review.append(self.reports.pop(author_id))
+            completed_report = self.reports.pop(author_id)
+            if completed_report.user_is_minor:
+                last_minor_index = None
+                for i, report in enumerate(self.pending_review):
+                    if report.user_is_minor:
+                        last_minor_index = i
+
+                if last_minor_index is not None:
+                    self.pending_review.insert(last_minor_index + 1, completed_report)
+                else:
+                    self.pending_review.insert(0, completed_report)
+            else:
+                self.pending_review.append(completed_report)
 
     async def handle_channel_message(self, message):
         user_channel = self.user_channels[message.guild.id]
@@ -142,10 +154,8 @@ class ModBot(discord.Client):
             reply = "Use the `review` command to begin the review process.\n"
             await message.channel.send(reply)
             return
-        
-        if message.content.startswith(
-            Report.REVIEW_KEYWORD
-        ):
+
+        if message.content.startswith(Report.REVIEW_KEYWORD):
             if len(self.pending_review) == 0:
                 await message.channel.send("No reports to review.")
                 return
@@ -155,7 +165,6 @@ class ModBot(discord.Client):
 
         if self.pending_review[0].review_complete():
             self.reviewed.append(self.pending_review.pop(0))
-
 
     def eval_text(self, message):
         """'
