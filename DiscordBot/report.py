@@ -2,7 +2,7 @@ from enum import Enum, auto
 from dataclasses import dataclass
 import discord
 import re
-
+import json
 
 class State(Enum):
     REPORT_START = auto()
@@ -111,6 +111,10 @@ class Report:
         self.previous_reason = None
         self.previous_subtype = None
         self.previous_minor_indication = None
+    
+    def __lt__(self, other):
+        # Define the comparison logic. In this case, priority 0 (minors) is higher.
+        return self.user_is_minor and not other.user_is_minor
 
     async def handle_message(self, message):
         if message.content == self.CANCEL_KEYWORD:
@@ -171,6 +175,7 @@ class Report:
                     around=self.message, limit=15
                 )
             ]
+            self.message_history = sorted(self.message_history, key=lambda m: m.created_at)
 
             self.update_previous_state()
             self.state = State.AWAITING_REPORT_REASON
@@ -439,6 +444,55 @@ class Report:
 
         reply += "\nIf this is correct, reply `confirm`. If not, reply `cancel`."
         return ["Thank you.", reply]
+    
+    @classmethod
+    async def load_with_openai_client(cls, client, reporter_id, message, message_history):
+        report = cls(client, reporter_id)
+        
+        report.message = message
+        report.message_history = message_history
+        
+        # Format the message history for context
+        formatted_history = "\n".join(
+            [f"{m.author.name}: {m.content}" for m in report.message_history]
+        )
+        
+        reason_response = client.openai_client.chat.completions.create(
+            model=client.openai_model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You are a Discord moderation bot that helps users report messages. Based on the provided message history, determine the most appropriate report reason from the available options. Respond with a JSON object containing the 'reason' field."},
+                {"role": "user", "content": formatted_history},
+                {"role": "user", "content": f"What is the most appropriate report reason for the last message? Choose from the following options: {', '.join([r.name.value for r in cls.REPORT_REASON_INFOS])}. Respond with a JSON object in the format: {{\"reason\": \"<selected_reason>\"}}"}
+            ]
+        )
+        reason_data = json.loads(reason_response.choices[0].message.content.strip())
+        print(f'Reason: {reason_data}')
+        report.report_reason = next((r for r in cls.REPORT_REASON_INFOS if r.name.value == reason_data["reason"]), None)
+        print(report.report_reason)
+        print()
+        
+        if report.report_reason and report.report_reason.subtypes:
+            subtype_response = client.openai_client.chat.completions.create(
+                model=client.openai_model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": "You are a Discord moderation bot that helps users report messages. Based on the provided message history and report reason, determine the most appropriate specific reason from the available options. Respond with a JSON object containing the 'subtype' field."},
+                    {"role": "user", "content": formatted_history},
+                    {"role": "user", "content": f"The report reason is {report.report_reason.name.value}. What is the most appropriate specific reason? Choose from the following options: {', '.join([s.name.value for s in report.report_reason.subtypes])}. Respond with a JSON object in the format: {{\"subtype\": \"<selected_subtype>\"}}"}
+                ]
+            )
+            
+            subtype_data = json.loads(subtype_response.choices[0].message.content.strip())
+            print(f'Subtype: {subtype_data}')
+            
+            report.reason_subtype = next((s for s in report.report_reason.subtypes if s.name.value == subtype_data["subtype"]), None)
+            print(report.reason_subtype)
+            print()
+        
+        report.state = State.REPORT_COMPLETE
+        
+        return report
 
     def update_previous_state(self):
         self.previous_state = self.state

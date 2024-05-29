@@ -1,4 +1,3 @@
-# bot.py
 import discord
 from discord.ext import commands
 import os
@@ -7,6 +6,8 @@ import logging
 import re
 import requests
 from report import Report
+import heapq
+from openai import OpenAI
 import pdb
 
 # Set up logging to the console
@@ -23,13 +24,12 @@ token_path = "tokens.json"
 if not os.path.isfile(token_path):
     raise Exception(f"{token_path} not found!")
 with open(token_path) as f:
-    # If you get an error here, it means your token is formatted incorrectly. Did you put it in quotes?
     tokens = json.load(f)
     discord_token = tokens["discord"]
-
+    # openai.api_key = tokens["openai"]
 
 class ModBot(discord.Client):
-    def __init__(self):
+    def __init__(self, openai_model='gpt-4o'):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix=".", intents=intents)
@@ -39,9 +39,12 @@ class ModBot(discord.Client):
         self.mod_channels = {}  # Map from guild to the mod channel id for that guild
 
         self.reports = {}  # Map from user IDs to the state of their report
-        self.pending_review = []  # List of reports that are pending review
+        self.pending_review = []  # Priority queue for reports that are pending review
         self.reviewed = []  # List of reports that have been reviewed
         self.report_ban = []  # List of users who cannot report
+
+        self.openai_client = None
+        self.openai_model = openai_model
 
     async def on_ready(self):
         print(f"{self.user.name} has connected to Discord! It is these guilds:")
@@ -57,6 +60,8 @@ class ModBot(discord.Client):
             raise Exception(
                 'Group number not found in bot\'s name. Name format should be "Group # Bot".'
             )
+        
+        self.openai_client = OpenAI()
 
         # Find the mod and user channel in each guild that this bot should report to
         for guild in self.guilds:
@@ -91,8 +96,6 @@ class ModBot(discord.Client):
             await message.channel.send(reply)
             return
 
-        responses = []
-
         if author_id in self.report_ban:
             await message.channel.send("You have been banned from reporting.")
             return
@@ -107,7 +110,7 @@ class ModBot(discord.Client):
         if author_id not in self.reports:
             self.reports[author_id] = Report(self, author_id)
 
-        # Let the report class handle this message; forward all the messages it returns to uss
+        # Let the report class handle this message; forward all the messages it returns to us
         responses = await self.reports[author_id].handle_message(message)
         for r in responses:
             await message.channel.send(r)
@@ -115,18 +118,7 @@ class ModBot(discord.Client):
         # If the report is complete or cancelled, remove it from our map
         if author_id in self.reports and self.reports[author_id].report_complete():
             completed_report = self.reports.pop(author_id)
-            if completed_report.user_is_minor:
-                last_minor_index = None
-                for i, report in enumerate(self.pending_review):
-                    if report.user_is_minor:
-                        last_minor_index = i
-
-                if last_minor_index is not None:
-                    self.pending_review.insert(last_minor_index + 1, completed_report)
-                else:
-                    self.pending_review.insert(0, completed_report)
-            else:
-                self.pending_review.append(completed_report)
+            heapq.heappush(self.pending_review, completed_report)
 
     async def handle_channel_message(self, message):
         user_channel = self.user_channels[message.guild.id]
@@ -137,16 +129,28 @@ class ModBot(discord.Client):
         elif message.channel == user_channel:
             await self.handle_user_channel_message(message)
 
-        ## lines from the starter code that might be useful in future
-        # scores = self.eval_text(message.content)
-        # await mod_channel.send(self.code_format(scores))
-
     async def handle_user_channel_message(self, message):
         user_channel = self.user_channels[message.guild.id]
-
         await user_channel.send(
             f'Hello {message.author.name}! I heard you say "{message.content}" in the user channel.'
         )
+
+        message_history = [
+            m async for m in message.channel.history(around=message, limit=15)
+        ]
+        message_history = sorted(message_history, key=lambda m: m.created_at)
+
+        evaluation = await self.eval_text(message, message_history)
+
+        potential_victim_id = None
+        for m in reversed(message_history):
+            if m.author.id != message.author.id:
+                potential_victim_id = m.author.id
+                break
+
+        if evaluation.get("sextortion", False):
+            report = await Report.load_with_openai_client(self, potential_victim_id, message, message_history)
+            heapq.heappush(self.pending_review, report)
 
     async def handle_mod_channel_message(self, message):
         mod_channel = self.mod_channels[message.guild.id]
@@ -159,22 +163,50 @@ class ModBot(discord.Client):
             if len(self.pending_review) == 0:
                 await message.channel.send("No reports to review.")
                 return
-        responses = await self.pending_review[0].handle_review(message)
+        
+        report = self.pending_review[0]
+        responses = await report.handle_review(message)
         for r in responses:
             await message.channel.send(r)
 
-        if self.pending_review[0].review_complete():
-            self.reviewed.append(self.pending_review.pop(0))
+        if report.review_complete():
+            self.reviewed.append(heapq.heappop(self.pending_review))
 
-    def eval_text(self, message):
-        """'
-        TODO: Once you know how you want to evaluate messages in your channel,
-        insert your code here! This will primarily be used in Milestone 3.
-        """
-        return message
+    async def eval_text(self, message, message_history):
+        # Format the history for context
+        formatted_history = "\n".join(
+            [f"{m.author.name}: {m.content}" for m in message_history]
+        )
+
+        last_message_content = message_history[-1].content
+
+        response = self.openai_client.chat.completions.create(
+            model=self.openai_model,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an AI assistant that helps evaluate messages for signs of sextortion. The user will provide a conversation history for context and a specific message to evaluate. Respond with a JSON object containing a boolean field 'sextortion'."
+                },
+                {
+                    "role": "user",
+                    "content": f"Conversation history:\n{formatted_history}\n\nEvaluate the following specific message for clear signs of sextortion:\n{last_message_content}\n\nRespond with a JSON object in the format: {{\"sextortion\": <true_or_false>}}"
+                }
+            ]
+        )
+
+        print(formatted_history)
+        print(response.choices[0].message.content)
+
+        try:
+            evaluation = json.loads(response.choices[0].message.content.strip())
+        except json.JSONDecodeError:
+            evaluation = {"sextortion": False}
+
+        return evaluation
 
     def code_format(self, text):
-        """'
+        """
         TODO: Once you know how you want to show that a message has been
         evaluated, insert your code here for formatting the string to be
         shown in the mod channel.
