@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import discord
 import re
 import json
+import os
+import aiohttp
 
 class State(Enum):
     REPORT_START = auto()
@@ -97,6 +99,8 @@ class Report:
         ReportReasonInfo(name=ReportReason.SPAM),
     ]
 
+    perspective_api_key = None
+
     def __init__(self, client, author_id):
         self.state = State.REPORT_START
         self.client = client
@@ -111,10 +115,23 @@ class Report:
         self.previous_reason = None
         self.previous_subtype = None
         self.previous_minor_indication = None
+
+        self.perspective_client = None
+        self.perspective_api_key = None
+
+        token_path = "tokens.json"
+
+        if not os.path.isfile(token_path):
+            raise Exception(f"{token_path} not found!")
+        with open(token_path) as f:
+            tokens = json.load(f)
+            self.perspective_api_key = tokens["perspective"]
     
     def __lt__(self, other):
-        # Define the comparison logic. In this case, priority 0 (minors) is higher.
-        return self.user_is_minor and not other.user_is_minor
+        if self.user_is_minor != other.user_is_minor:
+            return self.user_is_minor
+        else:
+            return self.severity_score > other.severity_score
 
     async def handle_message(self, message):
         if message.content == self.CANCEL_KEYWORD:
@@ -164,6 +181,7 @@ class Report:
                 ]
             try:
                 self.message = await channel.fetch_message(int(m.group(3)))
+                await self.set_severity_score()
             except discord.errors.NotFound:
                 return [
                     "It seems this message was deleted or never existed. Please try again or say `cancel` to cancel."
@@ -445,12 +463,44 @@ class Report:
         reply += "\nIf this is correct, reply `confirm`. If not, reply `cancel`."
         return ["Thank you.", reply]
     
+    async def set_severity_score(self):
+        if not self.perspective_client:
+            self.perspective_client = aiohttp.ClientSession()
+
+        perspective_url = f'https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze?key={self.perspective_api_key}'
+        
+        perspective_request = {
+            'comment': {'text': self.message.content},
+            'requestedAttributes': {
+                'TOXICITY': {},
+                'SEVERE_TOXICITY': {},
+                'IDENTITY_ATTACK': {},
+                'INSULT': {},
+                'THREAT': {},
+            },
+        }
+        
+        async with self.perspective_client.post(perspective_url, json=perspective_request) as response:
+            perspective_data = await response.json()
+
+        attribute_scores = perspective_data.get('attributeScores', {})
+        self.severity_score = (
+            attribute_scores.get('TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
+            attribute_scores.get('SEVERE_TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
+            attribute_scores.get('IDENTITY_ATTACK', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
+            attribute_scores.get('INSULT', {}).get('summaryScore', {}).get('value', 0) * 0.05 +
+            attribute_scores.get('THREAT', {}).get('summaryScore', {}).get('value', 0) * 0.5
+        )
+
+        print(f'set severity score of {self.severity_score} for message "{self.message.content}"')
+    
     @classmethod
     async def load_with_openai_client(cls, client, reporter_id, message, message_history):
         report = cls(client, reporter_id)
         
         report.message = message
         report.message_history = message_history
+        await report.set_severity_score()
         
         # Format the message history for context
         formatted_history = "\n".join(
