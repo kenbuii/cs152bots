@@ -9,6 +9,7 @@ from report import Report
 import heapq
 from openai import OpenAI
 import pdb
+import aiohttp
 
 # Set up logging to the console
 logger = logging.getLogger("discord")
@@ -29,6 +30,7 @@ with open(token_path) as f:
     # openai.api_key = tokens["openai"]
 
 class ModBot(discord.Client):
+
     def __init__(self, openai_model='gpt-4o'):
         intents = discord.Intents.default()
         intents.message_content = True
@@ -45,6 +47,18 @@ class ModBot(discord.Client):
 
         self.openai_client = None
         self.openai_model = openai_model
+
+        self.perspective_client = None
+        self.perspective_api_key = None
+
+        token_path = "tokens.json"
+
+        if not os.path.isfile(token_path):
+            raise Exception(f"{token_path} not found!")
+        with open(token_path) as f:
+            tokens = json.load(f)
+            self.perspective_api_key = tokens["perspective"]
+
 
     async def on_ready(self):
         print(f"{self.user.name} has connected to Discord! It is these guilds:")
@@ -173,6 +187,9 @@ class ModBot(discord.Client):
             self.reviewed.append(heapq.heappop(self.pending_review))
 
     async def eval_text(self, message, message_history):
+        if self.get_severity_score(message.content) < 0.0001:
+            return
+
         # Format the history for context
         formatted_history = "\n".join(
             [f"{m.author.name}: {m.content}" for m in message_history]
@@ -212,6 +229,35 @@ class ModBot(discord.Client):
         shown in the mod channel.
         """
         return "Evaluated: '" + text + "'"
+    
+    async def get_severity_score(self, message_content):
+        if not self.perspective_client:
+            self.perspective_client = aiohttp.ClientSession()
+
+        perspective_url = f'https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze?key={self.perspective_api_key}'
+        
+        perspective_request = {
+            'comment': {'text': message_content},
+            'requestedAttributes': {
+                'TOXICITY': {},
+                'SEVERE_TOXICITY': {},
+                'IDENTITY_ATTACK': {},
+                'INSULT': {},
+                'THREAT': {},
+            },
+        }
+        
+        async with self.perspective_client.post(perspective_url, json=perspective_request) as response:
+            perspective_data = await response.json()
+
+        attribute_scores = perspective_data.get('attributeScores', {})
+        return (
+            attribute_scores.get('TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.1 +
+            attribute_scores.get('SEVERE_TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.20 +
+            attribute_scores.get('IDENTITY_ATTACK', {}).get('summaryScore', {}).get('value', 0) * 0.1 +
+            attribute_scores.get('INSULT', {}).get('summaryScore', {}).get('value', 0) * 0.1 +
+            attribute_scores.get('THREAT', {}).get('summaryScore', {}).get('value', 0) * 0.5
+        )
 
 
 client = ModBot()

@@ -4,7 +4,12 @@ import discord
 import re
 import json
 import os
+import requests
+from deep_translator import GoogleTranslator, single_detection
+import asyncio
 import aiohttp
+import datetime
+import math
 
 class State(Enum):
     REPORT_START = auto()
@@ -99,7 +104,6 @@ class Report:
         ReportReasonInfo(name=ReportReason.SPAM),
     ]
 
-    perspective_api_key = None
 
     def __init__(self, client, author_id):
         self.state = State.REPORT_START
@@ -116,22 +120,37 @@ class Report:
         self.previous_subtype = None
         self.previous_minor_indication = None
 
-        self.perspective_client = None
-        self.perspective_api_key = None
+        self.translator = GoogleTranslator(source='auto', target='en')
+        self.message_content_english = None
+        self.message_original_language = None
 
-        token_path = "tokens.json"
+        self.history_contains_nude_image = None
 
-        if not os.path.isfile(token_path):
-            raise Exception(f"{token_path} not found!")
-        with open(token_path) as f:
-            tokens = json.load(f)
-            self.perspective_api_key = tokens["perspective"]
+        self.submitted_at = None
+
+        self.process_attachments_task = None
     
     def __lt__(self, other):
         if self.user_is_minor != other.user_is_minor:
             return self.user_is_minor
+        elif self.history_contains_nude_image != other.history_contains_nude_image:
+            return self.history_contains_nude_image
         else:
             return self.severity_score > other.severity_score
+
+    def to_dict(self):
+        return {
+            "message_id": self.message.id,
+            "message_content": self.message.content,
+            "message_author": self.message.author.name,
+            "message_created_at": self.message.created_at.isoformat(),
+            "message_link": self.message.jump_url,
+            "report_reason": self.report_reason.name.value if self.report_reason else None,
+            "reason_subtype": self.reason_subtype.name.value if self.reason_subtype else None,
+            "user_is_minor": self.user_is_minor,
+            "history_contains_nude_image": self.history_contains_nude_image,
+            "severity_score": self.severity_score
+        }
 
     async def handle_message(self, message):
         if message.content == self.CANCEL_KEYWORD:
@@ -181,6 +200,14 @@ class Report:
                 ]
             try:
                 self.message = await channel.fetch_message(int(m.group(3)))
+                self.message_content_english = self.translator.translate(text=self.message.content)
+
+                if self.message.content:
+                    self.message_original_language = single_detection(self.message.content, api_key='0d2fdb3793f204dbe1af65e51c462513')
+
+                print(f"MESSAGE IN EN: {self.message_content_english}")
+                print(f"MESSAGE LANG: {self.message_original_language}")
+
                 await self.set_severity_score()
             except discord.errors.NotFound:
                 return [
@@ -194,6 +221,7 @@ class Report:
                 )
             ]
             self.message_history = sorted(self.message_history, key=lambda m: m.created_at)
+            await self.set_history_contains_nude_image()
 
             self.update_previous_state()
             self.state = State.AWAITING_REPORT_REASON
@@ -268,12 +296,22 @@ class Report:
 
         if self.state == State.AWAITING_BLOCK_DECISION:
             if message.content.lower() in ["yes", "y"]:
+                await self.wait_for_attachments_processing()
+                print(f"Submitting Report for {self.message.content} by {self.message.author.name}")
+                print(self.to_dict())
+                print()
                 self.state = State.REPORT_COMPLETE
+                self.submitted_at = datetime.datetime.now()
                 return [
                     "User blocked. Thank you again for the report, we will review it and take appropriate action."
                 ]
             elif message.content.lower() in ["no", "n"]:
+                await self.wait_for_attachments_processing()
+                print(f"Submitting Report for {self.message.content} by {self.message.author.name}")
+                print(self.to_dict())
+                print()
                 self.state = State.REPORT_COMPLETE
+                self.submitted_at = datetime.datetime.now()
                 return [
                     "Thank you for the report, we will review it and take appropriate action."
                 ]
@@ -290,7 +328,10 @@ class Report:
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "> Message: " + self.message.jump_url + "\n"
             reply += f"> Message Author: <@{self.message.author.id}> \n"
-            reply += "> Message Contents: " + self.message.content + "\n"
+            reply += "> Original Message Contents: " + self.message.content + "\n"
+            if  self.message_original_language != "en":
+                reply += f"> Translated Message Contents: {self.message_content_english}\n"
+            
             reply += "> Reason: " + self.report_reason.name.value + "\n"
 
             if self.reason_subtype:
@@ -298,6 +339,9 @@ class Report:
 
             if self.user_is_minor is not None:
                 reply += "> Minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
+            if self.history_contains_nude_image:
+                reply += f'> Context contains nude image.\n'
+
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
             reply += "Reply `yes` or `no`."
@@ -464,42 +508,49 @@ class Report:
         return ["Thank you.", reply]
     
     async def set_severity_score(self):
-        if not self.perspective_client:
-            self.perspective_client = aiohttp.ClientSession()
+        self.severity_score = await self.client.get_severity_score(self.message.content)
 
-        perspective_url = f'https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze?key={self.perspective_api_key}'
-        
-        perspective_request = {
-            'comment': {'text': self.message.content},
-            'requestedAttributes': {
-                'TOXICITY': {},
-                'SEVERE_TOXICITY': {},
-                'IDENTITY_ATTACK': {},
-                'INSULT': {},
-                'THREAT': {},
-            },
-        }
-        
-        async with self.perspective_client.post(perspective_url, json=perspective_request) as response:
-            perspective_data = await response.json()
+        print(f'Set severity score of {self.severity_score} for message "{self.message.content}".')
 
-        attribute_scores = perspective_data.get('attributeScores', {})
-        self.severity_score = (
-            attribute_scores.get('TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
-            attribute_scores.get('SEVERE_TOXICITY', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
-            attribute_scores.get('IDENTITY_ATTACK', {}).get('summaryScore', {}).get('value', 0) * 0.15 +
-            attribute_scores.get('INSULT', {}).get('summaryScore', {}).get('value', 0) * 0.05 +
-            attribute_scores.get('THREAT', {}).get('summaryScore', {}).get('value', 0) * 0.5
-        )
+    async def set_history_contains_nude_image(self):
+        async def process_attachments():
+            try:
+                async with aiohttp.ClientSession() as session:
+                    for message in self.message_history:
+                        for attachment in message.attachments:
+                            if any(ext in attachment.url for ext in [".png", ".jpg", ".jpeg", ".gif"]):
+                                async with session.post("https://thequantumfractal--zero-shot-classifier-inference-web.modal.run", json={"image": attachment.url}) as response:
+                                    if response.status == 200:
+                                        result = await response.json()
+                                        probs = result['image']
+                                        naked_prob = next((label_info['score'] for label_info in probs if label_info['label'] == 'naked'), None)
 
-        print(f'set severity score of {self.severity_score} for message "{self.message.content}"')
+                                        if naked_prob > 0.5:
+                                            self.history_contains_nude_image = True
+                                            print(f'Detected nudity for message with content: "{message.content}".')
+                                            return
+                                    else:
+                                        print(f"Error occurred while processing attachment: {attachment.url}")
+            except Exception as e:
+                print(f"Error occurred in process_attachments: {str(e)}")
+            
+            self.history_contains_nude_image = False
+
+        self.process_attachments_task = asyncio.create_task(process_attachments())
     
+    async def wait_for_attachments_processing(self):
+        if self.process_attachments_task:
+            await self.process_attachments_task
+        
     @classmethod
     async def load_with_openai_client(cls, client, reporter_id, message, message_history):
         report = cls(client, reporter_id)
         
         report.message = message
+        report.message_content_english = report.translator.translate(text=report.message.content)
         report.message_history = message_history
+        await report.set_history_contains_nude_image()
+
         await report.set_severity_score()
         
         # Format the message history for context
@@ -540,7 +591,9 @@ class Report:
             print(report.reason_subtype)
             print()
         
+        await report.wait_for_attachments_processing()
         report.state = State.REPORT_COMPLETE
+        report.submitted_at = datetime.datetime.now()
         
         return report
 
