@@ -187,8 +187,10 @@ class ModBot(discord.Client):
             self.reviewed.append(heapq.heappop(self.pending_review))
 
     async def eval_text(self, message, message_history):
-        if self.get_severity_score(message.content) < 0.0001:
-            return
+        severity_score = await self.get_severity_score(message.content)
+        print(severity_score)
+        if severity_score < 0.05:
+            return {"sextortion": False}
 
         # Format the history for context
         formatted_history = "\n".join(
