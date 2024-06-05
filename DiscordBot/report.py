@@ -111,7 +111,7 @@ class Report:
         self.message = None
         self.report_reason = None
         self.reason_subtype = None
-        self.user_is_minor = None
+        self.user_is_minor = False
         self.message_history = None
         self.author_id = author_id
         self.guild = None
@@ -549,8 +549,6 @@ class Report:
         report.message = message
         report.message_content_english = report.translator.translate(text=report.message.content)
         report.message_history = message_history
-        await report.set_history_contains_nude_image()
-
         await report.set_severity_score()
         
         # Format the message history for context
@@ -591,6 +589,7 @@ class Report:
             print(report.reason_subtype)
             print()
         
+        await report.set_history_contains_nude_image()
         await report.wait_for_attachments_processing()
         report.state = State.REPORT_COMPLETE
         report.submitted_at = datetime.datetime.now()
