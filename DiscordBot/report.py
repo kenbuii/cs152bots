@@ -10,6 +10,8 @@ import asyncio
 import aiohttp
 import datetime
 import math
+from PIL import Image
+import imagehash
 
 class State(Enum):
     REPORT_START = auto()
@@ -26,6 +28,7 @@ class State(Enum):
     PENDING_GUIDELINES_REVIEW = auto()
     PENDING_MINOR_REVIEW = auto()
     PENDING_ADVERSARY_REVIEW = auto()
+    PENDING_NMCEC_REPORT = auto()
     REVIEW_COMPLETE = auto()
 
 
@@ -119,6 +122,7 @@ class Report:
         self.previous_reason = None
         self.previous_subtype = None
         self.previous_minor_indication = None
+        self.nude_image = None
 
         self.translator = GoogleTranslator(source='auto', target='en')
         self.message_content_english = None
@@ -151,6 +155,10 @@ class Report:
             "history_contains_nude_image": self.history_contains_nude_image,
             "severity_score": self.severity_score
         }
+
+    def image_hash(self):
+        image = Image.open(requests.get(self.nude_image, stream=True).raw)
+        return imagehash.average_hash(image)
 
     async def handle_message(self, message):
         if message.content == self.CANCEL_KEYWORD:
@@ -341,6 +349,7 @@ class Report:
                 reply += "> Minor: " + ("Yes" if self.user_is_minor else "No") + "\n"
             if self.history_contains_nude_image:
                 reply += f'> Context contains nude image.\n'
+                reply += f'> Image Hash: {self.image_hash()}\n'
 
             reply += "> ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             reply += "Is there a threat of nonconsensual sharing of intimate or sexually explicit content?\n"
@@ -381,14 +390,59 @@ class Report:
                 return [reply]
             else:
                 return ["Invalid input. Please reply `yes` or `no`."]
+        if self.state == State.PENDING_NMCEC_REPORT:
+            if message.content.lower() in ["yes", "y"]:
+                reply = "Thank you for reviewing the report. A NMCEC report has been made below but has not been filed. This review is now marked as completed.\n"
+                message_history = ""
+                for m in self.message_history:
+                    message_history += f"{m.author.name}: {m.content}\n"
+                reply += f""""<report xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="https://report.cybertip.org/ispws/xsd">
+    <incidentSummary>
+        <incidentType>Child Pornography (possession, manufacture, and distribution)</incidentType>
+        <incidentDateTime>{datetime.datetime.now().isoformat()}</incidentDateTime>
+    </incidentSummary>
+    <chatImIncident>
+        <chatClient>
+            Discord
+        </chatClient>
+        <chatRoomName>
+        </chatRoomName>
+        <content>
+            {self.message.content}
+        </content>
+        <additionalInfo>
+            {message_history}
+        </additionalInfo>
+    </chatImIncident>
+    <personOrUserReported>
+        <espIdentifier>
+            {self.message.author.id}
+        </espIdentifier>
+        <screenName>
+            {self.message.author.name}
+        </screenName>
+    </personOrUserReported>
+</report>"""
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            elif message.content.lower() in ["no", "n"]:
+                reply = "Thank you for your cooperation. This review is now marked as completed.\n"
+                self.state = State.REVIEW_COMPLETE
+                return [reply]
+            else:
+                return ["Invalid input. Please reply `yes` or `no`."]
         if self.state == State.PENDING_MINOR_REVIEW:
             if message.content.lower() in ["yes", "y"]:
-                reply = "Thank you for reviewing the report. The reported content does involve a minor. This review is now marked as completed.\n"
-                reply += "Please file a report with the National Center for Missing and Exploited Children at https://report.cybertip.org/.\n"
+                reply = "Thank you for reviewing the report. The reported content does involve a minor.\n"
+                reply += f"<@{self.message.author.id}> has been banned."
+                reply += "Would you like to file a report with the National Center for Missing and Exploited Children?\n"
+                reply += "Reply `yes` or `no`."
+                self.update_previous_state()
+                self.state = State.PENDING_NMCEC_REPORT
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
-                reply += f"<@{self.message.author.id}> has been banned."
                 self.state = State.REVIEW_COMPLETE
                 return [reply]
             elif message.content.lower() in ["no", "n"]:
@@ -526,6 +580,7 @@ class Report:
                                         naked_prob = next((label_info['score'] for label_info in probs if label_info['label'] == 'naked'), None)
 
                                         if naked_prob > 0.5:
+                                            self.nude_image = attachment.url
                                             self.history_contains_nude_image = True
                                             print(f'Detected nudity for message with content: "{message.content}".')
                                             return
