@@ -145,9 +145,9 @@ class ModBot(discord.Client):
 
     async def handle_user_channel_message(self, message):
         user_channel = self.user_channels[message.guild.id]
-        await user_channel.send(
-            f'Hello {message.author.name}! I heard you say "{message.content}" in the user channel.'
-        )
+        # await user_channel.send(
+        #     f'Hello {message.author.name}! I heard you say "{message.content}" in the user channel.'
+        # )
 
         message_history = [
             m async for m in message.channel.history(around=message, limit=15)
@@ -178,13 +178,14 @@ class ModBot(discord.Client):
                 await message.channel.send("No reports to review.")
                 return
         
-        report = self.pending_review[0]
-        responses = await report.handle_review(message)
-        for r in responses:
-            await message.channel.send(r)
+        if self.pending_review:
+            report = self.pending_review[0]
+            responses = await report.handle_review(message)
+            for r in responses:
+                await message.channel.send(r)
 
-        if report.review_complete():
-            self.reviewed.append(heapq.heappop(self.pending_review))
+            if report.review_complete():
+                self.reviewed.append(heapq.heappop(self.pending_review))
 
     async def eval_text(self, message, message_history):
         severity_score = await self.get_severity_score(message.content)
@@ -206,6 +207,38 @@ class ModBot(discord.Client):
                 {
                     "role": "system",
                     "content": "You are an AI assistant that helps evaluate messages for signs of sextortion. The user will provide a conversation history for context and a specific message to evaluate. Respond with a JSON object containing a boolean field 'sextortion'."
+                },
+                {
+                    "role": "user",
+                    "content": "Conversation history:\nMark: Hey Sarah, long time no talk!\nSarah: Oh hi Mark! Yeah it's been a while. How have you been?\nMark: Pretty good, staying busy with work and family. How about you?\n\nEvaluate the following specific message for clear signs of sextortion:\nSarah: Same here, just focused on my job and spending time with friends on the weekends. It's nice to catch up with you!"
+                },
+                {
+                    "role": "assistant", 
+                    "content": "{\"sextortion\": false}"
+                },
+                {
+                    "role": "user",
+                    "content": "Conversation history:\nAdam: I noticed you've been posting a lot of beach photos lately. Looks like you had a great vacation!\nJulia: Yeah, it was amazing! The weather was perfect and the water was so clear. Can't wait to go back next year.\nAdam: That's awesome. By the way, I think I might have seen some of your private vacation photos online somewhere. Not sure how they got out there.\n\nEvaluate the following specific message for clear signs of sextortion:\nJulia: Oh no, really? That's so weird, I didn't post any private photos. Can you tell me where you saw them? I'll try to get them taken down."
+                },
+                {
+                    "role": "assistant",
+                    "content": "{\"sextortion\": false}"
+                },
+                {
+                    "role": "user",
+                    "content": "Conversation history:\nJohn: Hey, how's it going?\nEmily: Not bad, thanks for asking. How about you?\nJohn: I'm doing alright. By the way, I came across some private photos of you online...\n\nEvaluate the following specific message for clear signs of sextortion:\nJohn: If you don't want me to share those photos, you'll need to send me $500 in gift cards. I'll give you 24 hours to comply, or else everyone will see them."
+                },
+                {
+                    "role": "assistant",
+                    "content": "{\"sextortion\": true}"
+                },
+                {
+                    "role": "user", 
+                    "content": "Conversation history:\nDavid: Hey Anna, I saw your post about looking for a new job. Any luck so far?\nAnna: Not yet, but I've been applying to a lot of positions. Hopefully something will come through soon.\nDavid: I'm sure you'll find something great. You're really talented. On another note, I wanted to let you know that an anonymous account has been threatening to release some compromising videos of you if you don't pay them.\n\nEvaluate the following specific message for clear signs of sextortion:\nAnna: What? That's horrible! I don't have any compromising videos out there. This must be a scam. Thanks for letting me know, David. I'll report the account and be extra cautious."
+                },
+                {
+                    "role": "assistant",
+                    "content": "{\"sextortion\": false}"  
                 },
                 {
                     "role": "user",

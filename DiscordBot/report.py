@@ -439,7 +439,7 @@ class Report:
                 reply += "Would you like to file a report with the National Center for Missing and Exploited Children?\n"
                 reply += "Reply `yes` or `no`."
                 self.update_previous_state()
-                self.state = State.PENDING_NMCEC_REPORT
+                #self.state = State.PENDING_NMCEC_REPORT
                 reply += (
                     "Please file a report with your local law enforcement agency.\n"
                 )
