@@ -1,7 +1,7 @@
 # CS 152 - Trust and Safety Engineering
 ## Discord Bot Framework Code
 
-!![cs152 final poster](https://github.com/kenbuii/cs152bots/assets/130824642/5c109a2c-2d57-48c8-b159-b752a0cff001)
+![cs152 final poster](https://github.com/kenbuii/cs152bots/assets/130824642/5c109a2c-2d57-48c8-b159-b752a0cff001)
 
 ## Discord Bot Setup Guide
 
