@@ -3,131 +3,10 @@
 
 ![cs152 final poster](https://github.com/kenbuii/cs152bots/assets/130824642/5c109a2c-2d57-48c8-b159-b752a0cff001)
 
-## Discord Bot Setup Guide
-
-For this milestone, your group will be making your very own Discord bot. Discord bots are implemented in Python (or Javascript) - don’t stress if you haven’t written Python before! It’s a pretty readable language, so you should be able to pick it up as you go, and the TAs are always here to help.
-
-If you’re not familiar with Discord, that’s okay! [Check out this short video](https://www.youtube.com/watch?v=rnYGrq95ezA) which overviews Discord’s features and quirks.
-
-### Joining your group channels
-
-First, every member of the team should join the Discord server using this invite link: 
-
-https://discord.gg/K4XmF7Yr
-
-Discord can be used in your web browser, although most people prefer the [thick client apps.](https://discord.com/download)
-
-For the next two milestones, you and your group will have two channels to test and develop your bot in:
-
-`group-#` and `group-#-mod`
-
-where # is your group’s number. We will give you and your bot a special role such that only you and the staff can see those channels; that way, everyone will have their small workspace. 
-
-To get the role for your group, click on the TA Bot user to bring up this window. 
-
-Type in: `.join #` where # is replaced by your group number. 
-
-
-![Screenshot 2024-04-20 at 3 20 44 PM](https://github.com/stanfordio/cs152bots/assets/35933488/50ea58fd-158c-4552-9bd9-e2d7772beea2)
-
-
-If all goes according to plan, you should receive a message back saying that you have been given a role corresponding to your group number and you should see a new role on your user in the server:
-
-
-![Screenshot 2024-04-20 at 3 21 11 PM](https://github.com/stanfordio/cs152bots/assets/35933488/93af3f0b-4589-40ff-a4e0-bac25f66d0b7)
-
-
-Additionally, you should be able to see two new channels under one of the “Group Channels” categories:
-
-
-![Screenshot 2024-04-20 at 3 21 44 PM](https://github.com/stanfordio/cs152bots/assets/35933488/8c534b72-06d6-43d6-b853-3e52e67f9a58)
-
-If you accidentally join the wrong group, just message the TA Bot ```.leave #``` to have the role removed and leave those channels. 
-
-#### Please let Anthony Mensah (admensah@stanford.edu or admensah on Discord) know if something goes awry in this process! 
-
-### [One student per group] Setting up your bot
-
-##### Note: only ONE student per group should follow the rest of these steps.
-
-#### Download files
-
-Fork and clone this GitHub repository. For instructions on how to fork a GitHub repo, [see this article](https://docs.github.com/en/get-started/quickstart/fork-a-repo). For your group to be able to collaborate effectively on this project, we recommend you create a shared GitHub repository; when you do, make sure you use the `.gitignore` file included in the starter code so that you don’t accidentally upload your tokens to GitHub. Our GitHub repository already has `tokens.json` in its `.gitignore` file. When you clone your project from there, you will have to create your own `tokens.json` file in the same folder as your bot.py file. The tokens.json file should look like this, replacing the “your key here” with your key. In the below sections, we explain how to obtain Discord keys.
-
-```
-{
-	"discord": "your key here"
-}
-```
-
-#### Making the bot
-
-The first thing you’ll want to do is make the bot. To do that, log in to https://discord.com/developers and click “New Application” in the top right corner. 
-
-![Screenshot 2024-04-20 at 3 33 56 PM](https://github.com/stanfordio/cs152bots/assets/35933488/6e4e166e-b1c3-44f0-86d1-1c1019b8ad7a)
-
-
-Name your application <mark> Group # Bot </mark>, where # is replaced with your group number. So, for instance, Group 0 would name their bot like so: 
-
-
-![Screenshot 2024-04-20 at 3 35 38 PM](https://github.com/stanfordio/cs152bots/assets/35933488/59ab135e-a3e0-4e58-a7dc-046cf722fdf4)
-
-##### It is very important that you name your bot exactly following this scheme; some parts of the bot’s code rely on this format.
-
-
-1. Next, you’ll want to click on the tab labeled “Bot” under “Settings.”
-2. Click “Copy” to copy the bot’s token. If you don’t see “Copy”, hit “Reset Token” and copy the token that appears (make sure you’re the first team member to go through these steps!)
-3. Open tokens.json and paste the token between the quotes on the line labeled “discord”.
-4. Scroll down to a region called “Privileged Gateway Intents”
-5. Tick the options for “Presence Intent”, “Server Members Intent”, and “Message Content Intent”, and save your changes. See the image for what it should look like.
-
-
-![Screenshot 2024-04-20 at 3 37 35 PM](https://github.com/stanfordio/cs152bots/assets/35933488/1d327d46-c325-4404-830e-0ae0be288e8d)
-
-
-An aside: It’s unsafe to embed API keys in your code directly. If you put that code on GitHub, then anyone could find and use that key! (GitHub actually tries to detect code like this and forbids programmers from uploading it.) That’s why we’re storing them in a separate file which can be ignored by version control software.
-
-Next, we’ll add the bot to the 152 Discord server! You’ll need to generate a link that the teaching team can use to invite your bot.
-
-
-
-1. Click on the tab labeled “OAuth2” under “Settings”
-2. Click the tab labeled “URL Generator” under “OAuth2”.
-3. Check the box labeled “bot”. Once you do that, another area with a bunch of options should appear lower down on the page.
-4. Check these permissions, then copy the link that’s generated.
-
-
-![Screenshot 2024-04-20 at 3 39 25 PM](https://github.com/stanfordio/cs152bots/assets/35933488/af2db3fe-16a9-4715-a591-9fb26e62d7b5)
-
-5. Send that link to any of the TAs via Discord (or by email) - they will use it to add your bot to the server. Once they do, your bot will appear in the `#general` channel and will be a part of the server!
-
-
-Note that these permissions are just a starting point for your bot. We think they’ll cover most cases, but you may run into cases where you want to be able to do more. If you do, you’re welcome to send updated links to the teaching team to re-invite your bot with new permissions. 
-
-
-#### Setting up the starter code
-
-
-First things first, the starter code is written in Python. You’ll want to make sure that you have Python 3 installed on your machine; if you don’t, follow [these instructions to install PyCharm](https://web.stanford.edu/class/cs106a/handouts/installingpycharm.html), the Stanford-recommended Python editor. Alternatively, you can use a text editor of your choice.
-
-
-Once you’ve done that, open a terminal in the same folder as your `bot.py` file. (If you haven’t used your terminal before, check out [this guide](https://www.macworld.com/article/2042378/master-the-command-line-navigating-files-and-folders.html)!)
-
-
-
-You’ll need to install some libraries if you don’t have them already, namely:
-
-
-	# python3 -m pip install requests
-	# python3 -m pip install discord.py
-
-### [Optional] Setting up your own server
-If you want to test out additional permissions/channels/features without having to wait for the TAs to make changes for you, you are welcome to create your own Discord server and invite your bot there instead! The starter code should support having the bot on multiple servers at once. If you do make your server, make sure to add a `group-#` and `group-#-mod` channel, as the bot’s code relies on having those channels for it to work properly. Just know that you’ll eventually need to move back into the 152 server. 
-
 
 ## Guide To The Starter Code
 
-Next up, let’s take a look at what `bot.py` already does. To do this, run `bot.py` and leave it running in your terminal. Next, go into your team’s private group-# channel and try typing any message. You should see something like this pop up in the `group-#-mod` channel:
+Let’s take a look at what `bot.py` already does. To do this, run `bot.py` and leave it running in your terminal. Next, go into your team’s private group-# channel and try typing any message. You should see something like this pop up in the `group-#-mod` channel:
 
 
 ![Screenshot 2024-04-20 at 3 50 02 PM](https://github.com/stanfordio/cs152bots/assets/35933488/b5654bc6-8db1-4ea2-9f4c-5f4dca344058)
@@ -143,10 +22,6 @@ Next up, click on your app in the right sidebar under “Online” to begin dire
 
 
 Try following its instructions from there by reporting a message from one of the channels to get a sense for the reporting flow that’s already built out for you. (Make sure to only report messages from channels that the bot is also in.)
-
-If you look through the starter code, you’ll see the beginnings of the reporting flow that are already there. It will be up to you to build that out in whatever way your group decides is best. You’re welcome to edit any part of the starter code you’d like if you want to change what’s already there - we encourage it! This is just meant to be a starting point that you can pattern match off of.
-
-If you’re not familiar with Python and asynchronous programming, please come to a section for an introduction. The TAs are happy to walk you through the starter code and explain anything that’s unclear.
 
 
 ## Troubleshooting
